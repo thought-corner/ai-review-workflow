@@ -1,7 +1,7 @@
 name: Claude Review (reusable)
 
 # 중앙 레포에 두는 재사용 워크플로우.
-# 다른 레포가 `uses: dnwls16071/ai-review-workflow/.github/workflows/claude-review.yml@v1` 로 호출한다.
+# 다른 레포가 `uses: thought-corner/ai-review-workflow/.github/workflows/claude-review.yml@v1` 로 호출한다.
 
 on:
   workflow_call:
@@ -37,7 +37,7 @@ jobs:
       - name: Checkout central prompt repo
         uses: actions/checkout@v4
         with:
-          repository: dnwls16071/ai-review-workflow
+          repository: thought-corner/ai-review-workflow
           ref: v1
           path: .review-central
           # token: ${{ secrets.CENTRAL_REPO_PAT }}   # private 레포일 때만

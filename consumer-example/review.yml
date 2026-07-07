@@ -17,7 +17,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    uses: dnwls16071/ai-review-workflow/.github/workflows/claude-review.yml@v1
+    uses: thought-corner/ai-review-workflow/.github/workflows/claude-review.yml@v1
     secrets: inherit
     # 기본값을 바꾸고 싶을 때만:
     # with:
