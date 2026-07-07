@@ -7,10 +7,10 @@ on:
   workflow_call:
     inputs:
       model:
-        description: "리뷰에 사용할 모델 (예: claude-sonnet-5, claude-opus-4-8)"
+        description: "리뷰에 사용할 모델 (예: claude-opus-4-8, claude-sonnet-5)"
         type: string
         required: false
-        default: "claude-sonnet-5"
+        default: "claude-opus-4-8"
       max_turns:
         description: "에이전트 최대 턴 수"
         type: string
@@ -30,8 +30,14 @@ jobs:
       id-token: write          # OIDC 토큰 발급 (claude-code-action 인증에 필요)
     steps:
       # 1) 리뷰받을 PR 코드 체크아웃 (호출한 소비 레포의 코드)
+      #    pull_request 이벤트면 PR head SHA, /review 코멘트 이벤트면 refs/pull/<번호>/head 를 체크아웃
       - name: Checkout PR code
         uses: actions/checkout@v4
+        with:
+          ref: >-
+            ${{ github.event_name == 'pull_request'
+                && github.event.pull_request.head.sha
+                || format('refs/pull/{0}/head', github.event.issue.number) }}
 
       # 2) 프롬프트를 가진 중앙 레포를 별도 경로에 체크아웃
       #    (중앙 레포가 public 이면 토큰 불필요. private 이면 아래 token 줄 주석 해제)
@@ -43,12 +49,16 @@ jobs:
           path: .review-central
           # token: ${{ secrets.CENTRAL_REPO_PAT }}   # private 레포일 때만
 
-      # 3) prompts/review.md 를 읽어 변수로 로드
+      # 3) prompts/review.md 를 읽어 변수로 로드 (+ PR 번호를 앞에 주입)
       - name: Load review prompt
         id: prompt
+        env:
+          PR_NUMBER: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.event.issue.number }}
         run: |
           {
             echo 'PROMPT<<CLAUDE_EOF'
+            echo "리뷰 대상 PR 번호: #${PR_NUMBER} — gh 명령에는 이 번호를 사용하라 (예: gh pr view ${PR_NUMBER}, gh pr comment ${PR_NUMBER})."
+            echo
             cat .review-central/prompts/review.md
             echo CLAUDE_EOF
           } >> "$GITHUB_OUTPUT"
