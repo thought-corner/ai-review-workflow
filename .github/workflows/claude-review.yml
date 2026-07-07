@@ -12,10 +12,10 @@ on:
         required: false
         default: "claude-opus-4-8"
       max_turns:
-        description: "에이전트 최대 턴 수"
+        description: "에이전트 최대 턴 수 (인라인 코멘트는 1건당 1턴을 쓰므로 넉넉히)"
         type: string
         required: false
-        default: "15"
+        default: "40"
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN:
         description: "MAX 구독으로 발급한 OAuth 토큰 (claude setup-token)"
