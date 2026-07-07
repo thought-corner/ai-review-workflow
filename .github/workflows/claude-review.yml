@@ -1,0 +1,63 @@
+name: Claude Review (reusable)
+
+# 중앙 레포에 두는 재사용 워크플로우.
+# 다른 레포가 `uses: dnwls16071/ai-review-workflow/.github/workflows/claude-review.yml@v1` 로 호출한다.
+
+on:
+  workflow_call:
+    inputs:
+      model:
+        description: "리뷰에 사용할 모델 (예: claude-sonnet-5, claude-opus-4-8)"
+        type: string
+        required: false
+        default: "claude-sonnet-5"
+      max_turns:
+        description: "에이전트 최대 턴 수"
+        type: string
+        required: false
+        default: "15"
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        description: "MAX 구독으로 발급한 OAuth 토큰 (claude setup-token)"
+        required: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read          # PR 코드 읽기
+      pull-requests: write     # 리뷰 코멘트 게시 (빠뜨리면 게시 실패)
+    steps:
+      # 1) 리뷰받을 PR 코드 체크아웃 (호출한 소비 레포의 코드)
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+
+      # 2) 프롬프트를 가진 중앙 레포를 별도 경로에 체크아웃
+      #    (중앙 레포가 public 이면 토큰 불필요. private 이면 아래 token 줄 주석 해제)
+      - name: Checkout central prompt repo
+        uses: actions/checkout@v4
+        with:
+          repository: dnwls16071/ai-review-workflow
+          ref: v1
+          path: .review-central
+          # token: ${{ secrets.CENTRAL_REPO_PAT }}   # private 레포일 때만
+
+      # 3) prompts/review.md 를 읽어 변수로 로드
+      - name: Load review prompt
+        id: prompt
+        run: |
+          {
+            echo 'PROMPT<<CLAUDE_EOF'
+            cat .review-central/prompts/review.md
+            echo CLAUDE_EOF
+          } >> "$GITHUB_OUTPUT"
+
+      # 4) Claude 실행 → 리뷰를 PR 코멘트로 게시
+      - name: Run Claude review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: ${{ steps.prompt.outputs.PROMPT }}
+          claude_args: |
+            --model ${{ inputs.model }}
+            --max-turns ${{ inputs.max_turns }}

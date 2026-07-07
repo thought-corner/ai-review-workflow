@@ -1,0 +1,25 @@
+# 리뷰받을 각 레포의 .github/workflows/review.yml 에 이 파일을 넣는다.
+# 이 파일 그대로 소비 레포에 넣으면 끝. (전부 이 몇 줄이 끝)
+
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# 한도 절약을 위해 원하면 경로/브랜치로 트리거를 좁혀도 된다:
+#   pull_request:
+#     branches: [main]
+#     paths: ["src/**", "lib/**"]
+
+jobs:
+  review:
+    permissions:
+      contents: read
+      pull-requests: write
+    uses: dnwls16071/ai-review-workflow/.github/workflows/claude-review.yml@v1
+    secrets: inherit
+    # 기본값을 바꾸고 싶을 때만:
+    # with:
+    #   model: claude-opus-4-8
+    #   max_turns: "20"
