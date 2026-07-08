@@ -1,0 +1,29 @@
+# 소비 레포의 .github/workflows/architecture-review.yml 에 넣는다.
+# 아키텍처 설계 리뷰 — PR에 코멘트로만 수동 실행(온디맨드). 전 범위를 훑으면 할루시네이션
+# 위험이 크므로, 반드시 범위를 좁혀서 부른다:
+#   /arch-review payment
+#   /arch-review src/main/kotlin/com/example/order
+# (범위를 안 적으면 리뷰어가 이 PR이 속한 모듈 하나로 스스로 좁혀서 본다)
+
+name: Claude Architecture Review
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  arch-review:
+    if: >-
+      github.event.issue.pull_request != null &&
+      startsWith(github.event.comment.body, '/arch-review')
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    uses: thought-corner/ai-review-workflow/.github/workflows/claude-review.yml@v1
+    secrets: inherit
+    with:
+      prompt_file: prompts/architecture.md
+      scope: ${{ github.event.comment.body }}
+      # 아키텍처는 넓게 보므로 턴을 넉넉히:
+      max_turns: "60"

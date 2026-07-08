@@ -16,6 +16,16 @@ on:
         type: string
         required: false
         default: "40"
+      prompt_file:
+        description: "사용할 프롬프트 경로 (예: prompts/review.md, prompts/architecture.md, prompts/test-quality.md)"
+        type: string
+        required: false
+        default: "prompts/review.md"
+      scope:
+        description: "리뷰 범위 힌트 (아키텍처 리뷰에서 도메인/모듈로 범위를 좁힐 때 사용. 코멘트 원문 그대로 넘겨도 됨)"
+        type: string
+        required: false
+        default: ""
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN:
         description: "MAX 구독으로 발급한 OAuth 토큰 (claude setup-token)"
@@ -61,12 +71,19 @@ jobs:
         id: prompt
         env:
           PR_NUMBER: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.event.issue.number }}
+          PROMPT_FILE: ${{ inputs.prompt_file }}
+          SCOPE: ${{ inputs.scope }}
         run: |
           {
             echo 'PROMPT<<CLAUDE_EOF'
             echo "리뷰 대상 PR 번호: #${PR_NUMBER} — gh 명령에는 이 번호를 사용하라 (예: gh pr view ${PR_NUMBER}, gh pr comment ${PR_NUMBER})."
+            if [ -n "${SCOPE}" ]; then
+              echo
+              echo "지정된 리뷰 범위(원문): ${SCOPE}"
+              echo "위 원문에서 슬래시 명령어 토큰(예: /arch-review)은 제외하고 나머지를 리뷰 범위로 해석하라. 이 범위 밖 코드는 참고만 하고 지적하지 않는다."
+            fi
             echo
-            cat .review-central/prompts/review.md
+            cat ".review-central/${PROMPT_FILE}"
             echo CLAUDE_EOF
           } >> "$GITHUB_OUTPUT"
 

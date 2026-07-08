@@ -1,0 +1,31 @@
+# 소비 레포의 .github/workflows/test-review.yml 에 넣는다.
+# 테스트 코드 품질 전담 리뷰 — 테스트 파일이 바뀐 PR에서만 자동 실행.
+# (경로 패턴은 각 레포 구조에 맞게 조정)
+
+name: Claude Test Quality Review
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - "**/src/test/**"
+      - "**/*Test.kt"
+      - "**/*Tests.kt"
+      - "**/*Test.java"
+      - "**/*Spec.kt"
+
+# 연속 푸시 시 이전 리뷰 잡 취소(토큰 절약)
+concurrency:
+  group: test-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  test-review:
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    uses: thought-corner/ai-review-workflow/.github/workflows/claude-review.yml@v1
+    secrets: inherit
+    with:
+      prompt_file: prompts/test-quality.md
