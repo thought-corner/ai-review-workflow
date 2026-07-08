@@ -24,6 +24,13 @@ on:
 jobs:
   review:
     runs-on: ubuntu-latest
+    # 같은 PR에 대한 리뷰 실행을 동시에 1개로 제한 — 새 실행이 시작되면 진행 중이던
+    # 이전 실행을 취소해 "중간까지 달리다 만 리뷰"가 쌓이는 것을 줄인다.
+    # (재사용 워크플로우는 워크플로우 레벨 concurrency가 호출자 기준이므로 잡 레벨에 둔다.
+    #  concurrency 그룹은 레포 단위로 격리되어 소비 레포끼리 충돌하지 않는다)
+    concurrency:
+      group: claude-review-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: true
     permissions:
       contents: read          # PR 코드 읽기
       pull-requests: write     # 리뷰 코멘트 게시 (빠뜨리면 게시 실패)
@@ -64,6 +71,8 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # 4) Claude 실행 → 리뷰를 PR 코멘트로 게시
+      #    gh api 허용: 재실행 시 기존 인라인 리뷰 코멘트를 조회해 중복 지적을 거르기 위함
+      #    (쓰기 범위는 어차피 GITHUB_TOKEN 의 pull-requests: write 로 제한된다)
       - name: Run Claude review
         uses: anthropics/claude-code-action@v1
         with:
@@ -73,4 +82,4 @@ jobs:
           claude_args: |
             --model ${{ inputs.model }}
             --max-turns ${{ inputs.max_turns }}
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api:*)"
