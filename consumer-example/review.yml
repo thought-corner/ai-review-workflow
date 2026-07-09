@@ -5,7 +5,13 @@ name: Claude PR Review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    # ready_for_review: draft → ready 전환 시점에 리뷰 (아래 draft 스킵과 세트)
+    types: [opened, synchronize, reopened, ready_for_review]
+  # 후속 질문: 리뷰 코멘트에 "@claude 왜 이게 문제야?" 처럼 답글을 달면 Claude가 답변한다
+  issue_comment: # PR 대화 탭 코멘트
+    types: [created]
+  pull_request_review_comment: # 인라인 리뷰 스레드 답글
+    types: [created]
 
 # 한도 절약을 위해 원하면 경로/브랜치로 트리거를 좁혀도 된다:
 #   pull_request:
@@ -14,9 +20,24 @@ on:
 
 jobs:
   review:
+    # 한도 절약:
+    #  - draft PR은 리뷰하지 않는다 → WIP 동안 draft로 두고 커밋을 자유롭게 푸시하다가,
+    #    리뷰받고 싶을 때 "Ready for review"를 누르면 그 시점에 리뷰가 돈다.
+    #  - 코멘트 이벤트는 "@claude" 멘션이 있고, 봇이 아닌 사람이 단 것만 처리한다.
+    if: >-
+      (github.event_name == 'pull_request'
+        && github.event.pull_request.draft == false) ||
+      (github.event_name == 'issue_comment'
+        && github.event.issue.pull_request
+        && contains(github.event.comment.body, '@claude')
+        && github.event.comment.user.type != 'Bot') ||
+      (github.event_name == 'pull_request_review_comment'
+        && contains(github.event.comment.body, '@claude')
+        && github.event.comment.user.type != 'Bot')
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     uses: thought-corner/ai-review-workflow/.github/workflows/claude-review.yml@v1
     secrets: inherit
     # 기본값을 바꾸고 싶을 때만:
