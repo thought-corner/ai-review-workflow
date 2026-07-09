@@ -34,27 +34,32 @@ on:
 jobs:
   review:
     runs-on: ubuntu-latest
-    # 같은 PR에 대한 리뷰 실행을 동시에 1개로 제한 — 새 실행이 시작되면 진행 중이던
+    # 같은 PR·같은 리뷰 종류의 실행을 동시에 1개로 제한 — 새 실행이 시작되면 진행 중이던
     # 이전 실행을 취소해 "중간까지 달리다 만 리뷰"가 쌓이는 것을 줄인다.
     # (재사용 워크플로우는 워크플로우 레벨 concurrency가 호출자 기준이므로 잡 레벨에 둔다.
     #  concurrency 그룹은 레포 단위로 격리되어 소비 레포끼리 충돌하지 않는다)
+    # 그룹에 prompt_file 을 포함해 리뷰 종류별로 격리한다 — 안 그러면 같은 PR에서
+    # 일반 리뷰와 테스트 리뷰가 동시에 돌 때 서로를 취소한다.
+    # @claude 후속 질문 답변은 별도 그룹 + 취소 없음 (질문이 진행 중인 리뷰를 죽이면 안 됨).
     concurrency:
-      group: claude-review-${{ github.event.pull_request.number || github.event.issue.number }}
-      cancel-in-progress: true
+      group: claude-review-${{ contains(github.event.comment.body, '@claude') && 'answer' || inputs.prompt_file }}-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: ${{ !contains(github.event.comment.body, '@claude') }}
     permissions:
       contents: read          # PR 코드 읽기
       pull-requests: write     # 리뷰 코멘트 게시 (빠뜨리면 게시 실패)
       id-token: write          # OIDC 토큰 발급 (claude-code-action 인증에 필요)
     steps:
       # 1) 리뷰받을 PR 코드 체크아웃 (호출한 소비 레포의 코드)
-      #    pull_request 이벤트면 PR head SHA, /review 코멘트 이벤트면 refs/pull/<번호>/head 를 체크아웃
+      #    pull_request 이벤트면 PR head SHA, 코멘트 이벤트면 refs/pull/<번호>/head 를 체크아웃
+      #    (PR 번호: issue_comment 는 issue.number, pull_request_review_comment 는
+      #     pull_request.number 에 실려 온다 — || 로 둘 다 흡수)
       - name: Checkout PR code
         uses: actions/checkout@v4
         with:
           ref: >-
             ${{ github.event_name == 'pull_request'
                 && github.event.pull_request.head.sha
-                || format('refs/pull/{0}/head', github.event.issue.number) }}
+                || format('refs/pull/{0}/head', github.event.pull_request.number || github.event.issue.number) }}
 
       # 2) 프롬프트를 가진 중앙 레포를 별도 경로에 체크아웃
       #    (중앙 레포가 public 이면 토큰 불필요. private 이면 아래 token 줄 주석 해제)
@@ -66,24 +71,52 @@ jobs:
           path: .review-central
           # token: ${{ secrets.CENTRAL_REPO_PAT }}   # private 레포일 때만
 
-      # 3) prompts/review.md 를 읽어 변수로 로드 (+ PR 번호를 앞에 주입)
-      - name: Load review prompt
+      # 3) 프롬프트 로드 (+ PR 번호 등 컨텍스트를 앞에 주입)
+      #    - @claude 멘션 코멘트 → prompts/answer.md (후속 질문 답변 모드)
+      #    - 그 외 → inputs.prompt_file (일반/아키텍처/테스트 리뷰)
+      #    코멘트 본문은 셸 인터폴레이션이 아닌 env 로만 전달한다(커맨드 인젝션 방지).
+      - name: Load prompt
         id: prompt
         env:
-          PR_NUMBER: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.event.issue.number }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           PROMPT_FILE: ${{ inputs.prompt_file }}
           SCOPE: ${{ inputs.scope }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          COMMENT_USER: ${{ github.event.comment.user.login }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
+          # 코멘트 본문에 heredoc 종결자와 같은 문자열이 있으면 GITHUB_OUTPUT 이 깨지므로 제거
+          COMMENT_BODY="${COMMENT_BODY//CLAUDE_EOF/}"
           {
             echo 'PROMPT<<CLAUDE_EOF'
-            echo "리뷰 대상 PR 번호: #${PR_NUMBER} — gh 명령에는 이 번호를 사용하라 (예: gh pr view ${PR_NUMBER}, gh pr comment ${PR_NUMBER})."
-            if [ -n "${SCOPE}" ]; then
-              echo
-              echo "지정된 리뷰 범위(원문): ${SCOPE}"
-              echo "위 원문에서 슬래시 명령어 토큰(예: /arch-review)은 제외하고 나머지를 리뷰 범위로 해석하라. 이 범위 밖 코드는 참고만 하고 지적하지 않는다."
-            fi
-            echo
-            cat ".review-central/${PROMPT_FILE}"
+            case "$COMMENT_BODY" in
+              *@claude*)
+                # 후속 질문 답변 모드
+                echo "대상 PR 번호: #${PR_NUMBER} — gh 명령에는 이 번호를 사용하라."
+                echo "질문자: ${COMMENT_USER}"
+                if [ "$EVENT_NAME" = "pull_request_review_comment" ]; then
+                  echo "질문 위치: 인라인 리뷰 코멘트 스레드 (원 코멘트 id: ${COMMENT_ID}) — 답변은 반드시 같은 스레드에 남겨라."
+                else
+                  echo "질문 위치: PR 대화 탭 — 답변은 gh pr comment 로 남겨라."
+                fi
+                echo "질문 내용:"
+                echo "${COMMENT_BODY}"
+                echo
+                cat .review-central/prompts/answer.md
+                ;;
+              *)
+                # 리뷰 모드 (일반/아키텍처/테스트 — prompt_file 로 갈린다)
+                echo "리뷰 대상 PR 번호: #${PR_NUMBER} — gh 명령에는 이 번호를 사용하라 (예: gh pr view ${PR_NUMBER}, gh pr comment ${PR_NUMBER})."
+                if [ -n "${SCOPE}" ]; then
+                  echo
+                  echo "지정된 리뷰 범위(원문): ${SCOPE}"
+                  echo "위 원문에서 슬래시 명령어 토큰(예: /arch-review)은 제외하고 나머지를 리뷰 범위로 해석하라. 이 범위 밖 코드는 참고만 하고 지적하지 않는다."
+                fi
+                echo
+                cat ".review-central/${PROMPT_FILE}"
+                ;;
+            esac
             echo CLAUDE_EOF
           } >> "$GITHUB_OUTPUT"
 
