@@ -23,7 +23,6 @@ jobs:
     # 한도 절약:
     #  - draft PR은 리뷰하지 않는다 → WIP 동안 draft로 두고 커밋을 자유롭게 푸시하다가,
     #    리뷰받고 싶을 때 "Ready for review"를 누르면 그 시점에 리뷰가 돈다.
-    #  - 코멘트 이벤트는 "@claude" 멘션이 있고, 봇이 아닌 사람이 단 것만 처리한다.
     #  - 코멘트 이벤트는 "@claude" 멘션이 있고, 봇이 아니며, 권한 있는 사람(OWNER/MEMBER/
     #    COLLABORATOR) 또는 그 PR의 작성자 본인(비협업자라도 자기 PR엔 질문 가능)만 처리한다.
     #    (그 외 제3자가 남의 PR에 @claude를 달아 비용 발생/프롬프트 인젝션을 트리거하는 것 방지)
@@ -33,16 +32,21 @@ jobs:
       (github.event_name == 'issue_comment'
         && github.event.issue.pull_request
         && contains(github.event.comment.body, '@claude')
-        && github.event.comment.user.type != 'Bot') ||
         && github.event.comment.user.type != 'Bot'
         && (contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
             || github.event.comment.user.login == github.event.issue.user.login)) ||
       (github.event_name == 'pull_request_review_comment'
         && contains(github.event.comment.body, '@claude')
-        && github.event.comment.user.type != 'Bot')
         && github.event.comment.user.type != 'Bot'
         && (contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
             || github.event.comment.user.login == github.event.pull_request.user.login))
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
+    uses: thought-corner/ai-review-workflow/.github/workflows/claude-review.yml@v1
+    secrets: inherit
+    # 기본값을 바꾸고 싶을 때만:
+    # with:
+    #   model: claude-opus-4-8
+    #   max_turns: "20"
