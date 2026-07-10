@@ -13,17 +13,14 @@ on:
 
 jobs:
   arch-review:
+    # author_association 체크: 아키텍처 재검토는 비용이 크고, scope에 코멘트 원문이
+    # 그대로 프롬프트에 주입되므로 외부 기여자가 임의로 트리거/인젝션하지 못하도록
+    # 권한 있는 사람(OWNER/MEMBER/COLLABORATOR)만 허용한다.
     if: >-
       github.event.issue.pull_request != null &&
       startsWith(github.event.comment.body, '/arch-review')
+      startsWith(github.event.comment.body, '/arch-review') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
     permissions:
       contents: read
       pull-requests: write
-      id-token: write
-    uses: thought-corner/ai-review-workflow/.github/workflows/claude-review.yml@v1
-    secrets: inherit
-    with:
-      prompt_file: prompts/architecture.md
-      scope: ${{ github.event.comment.body }}
-      # 아키텍처는 넓게 보므로 턴을 넉넉히:
-      max_turns: "60"

@@ -87,49 +87,10 @@ jobs:
           COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
           # 코멘트 본문에 heredoc 종결자와 같은 문자열이 있으면 GITHUB_OUTPUT 이 깨지므로 제거
+          # 코멘트 본문/스코프에 heredoc 종결자와 같은 문자열이 있으면 GITHUB_OUTPUT 이
+          # 깨지므로 제거 (SCOPE도 PR 코멘트 원문이라 COMMENT_BODY와 동일하게 취급)
           COMMENT_BODY="${COMMENT_BODY//CLAUDE_EOF/}"
+          SCOPE="${SCOPE//CLAUDE_EOF/}"
           {
             echo 'PROMPT<<CLAUDE_EOF'
             case "$COMMENT_BODY" in
-              *@claude*)
-                # 후속 질문 답변 모드
-                echo "대상 PR 번호: #${PR_NUMBER} — gh 명령에는 이 번호를 사용하라."
-                echo "질문자: ${COMMENT_USER}"
-                if [ "$EVENT_NAME" = "pull_request_review_comment" ]; then
-                  echo "질문 위치: 인라인 리뷰 코멘트 스레드 (원 코멘트 id: ${COMMENT_ID}) — 답변은 반드시 같은 스레드에 남겨라."
-                else
-                  echo "질문 위치: PR 대화 탭 — 답변은 gh pr comment 로 남겨라."
-                fi
-                echo "질문 내용:"
-                echo "${COMMENT_BODY}"
-                echo
-                cat .review-central/prompts/answer.md
-                ;;
-              *)
-                # 리뷰 모드 (일반/아키텍처/테스트 — prompt_file 로 갈린다)
-                echo "리뷰 대상 PR 번호: #${PR_NUMBER} — gh 명령에는 이 번호를 사용하라 (예: gh pr view ${PR_NUMBER}, gh pr comment ${PR_NUMBER})."
-                if [ -n "${SCOPE}" ]; then
-                  echo
-                  echo "지정된 리뷰 범위(원문): ${SCOPE}"
-                  echo "위 원문에서 슬래시 명령어 토큰(예: /arch-review)은 제외하고 나머지를 리뷰 범위로 해석하라. 이 범위 밖 코드는 참고만 하고 지적하지 않는다."
-                fi
-                echo
-                cat ".review-central/${PROMPT_FILE}"
-                ;;
-            esac
-            echo CLAUDE_EOF
-          } >> "$GITHUB_OUTPUT"
-
-      # 4) Claude 실행 → 리뷰를 PR 코멘트로 게시
-      #    gh api 허용: 재실행 시 기존 인라인 리뷰 코멘트를 조회해 중복 지적을 거르기 위함
-      #    (쓰기 범위는 어차피 GITHUB_TOKEN 의 pull-requests: write 로 제한된다)
-      - name: Run Claude review
-        uses: anthropics/claude-code-action@v1
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          prompt: ${{ steps.prompt.outputs.PROMPT }}
-          claude_args: |
-            --model ${{ inputs.model }}
-            --max-turns ${{ inputs.max_turns }}
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api:*)"
